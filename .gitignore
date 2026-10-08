@@ -1,0 +1,36 @@
+# Dataset files and generated preprocessing outputs
+/data/ntu/NTU*.npz
+/data/ntu/NTU*.pkl
+/data/ntu/raw_data/
+/data/ntu/denoised_data/
+/data/ntu120/NTU*.npz
+/data/ntu120/NTU*.pkl
+/data/ntu120/raw_data/
+/data/ntu120/denoised_data/
+/data/nturgbd_raw/
+/data/NW-UCLA/
+/data/raw_data/
+/raw_data/
+
+# Training outputs, checkpoints, and generated visualizations
+/work_dir/
+/vis/
+/artifacts/
+*.pt
+*.pth
+*.ckpt
+*.log
+
+# Local files and caches
+.DS_Store
+.vscode/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Manuscripts and reference material
+/docs/
+*.docx
+*.pdf
+*.zip
+/EXPERIMENTS_TODO.md

@@ -430,11 +430,31 @@ class Processor():
 
             # forward
             output = self.model(data)
+            aux_parts = None
             if isinstance(output, tuple):
-                ce_loss = self.loss(output[0], label)
-                h_loss = self.h_loss(output[1])
-                loss = ce_loss + h_loss
-                output = output[0]
+                logits, extra = output[0], output[1]
+                ce_loss = self.loss(logits, label)
+                if isinstance(extra, dict):
+                    h_loss = self.h_loss(extra['h_list'])
+                    base_model = (self.model.module
+                                  if isinstance(self.model, nn.DataParallel)
+                                  else self.model)
+                    import inspect as _inspect
+                    _sig = _inspect.signature(base_model.compute_aux_loss)
+                    if 'epoch' in _sig.parameters:
+                        aux_loss, aux_parts = base_model.compute_aux_loss(
+                            extra, label, epoch=epoch)
+                    else:
+                        aux_loss, aux_parts = base_model.compute_aux_loss(
+                            extra, label)
+                    loss = ce_loss + h_loss + aux_loss
+                    aux_parts = dict(aux_parts)
+                    aux_parts['ce'] = ce_loss.detach()
+                    aux_parts['h_div'] = h_loss.detach()
+                else:
+                    h_loss = self.h_loss(extra)
+                    loss = ce_loss + h_loss
+                output = logits
             else:
                 loss = self.loss(output, label)
 
@@ -451,6 +471,10 @@ class Processor():
             acc_value.append(acc.data.item())
             self.train_writer.add_scalar('acc', acc, self.global_step)
             self.train_writer.add_scalar('loss', loss.data.item(), self.global_step)
+
+            if aux_parts is not None:
+                for k, v in aux_parts.items():
+                    self.train_writer.add_scalar(k, float(v), self.global_step)
 
 
             # statistics

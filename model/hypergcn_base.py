@@ -83,6 +83,11 @@ class HYPERGC(nn.Module):
         self.conv_d = nn.Conv2d(in_channels, out_channels, kernel_size=1, groups=num_subset)
         self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32)), requires_grad=False)
         self.edge_importance = nn.Parameter(torch.ones(A.shape))
+        # Analysis-only relation capture. Disabled by default to avoid retaining
+        # per-sample matrices during training. Visualization tools may enable it
+        # temporarily and read ``last_relation`` after each forward pass.
+        self.capture_relation = False
+        self.last_relation = None
 
         if in_channels != out_channels:
             self.down = nn.Sequential(
@@ -128,7 +133,7 @@ class HYPERGC(nn.Module):
         h_x = (h_x.T).unsqueeze(1)
         x = torch.cat([x, h_x.repeat(N, 1, T, 1)], dim=-1)
         V += self.virtual_num
-        A = self.PA.cuda(x.get_device())
+        A = self.PA.to(x.device)
         A = self.edge_importance * A
         A = self.a_norm(A)
 
@@ -152,6 +157,11 @@ class HYPERGC(nn.Module):
             alpha = self.alpha
             alpha = self.relu(alpha)
             A = A + alpha * G
+
+        if self.capture_relation:
+            self.last_relation = A.detach()
+        else:
+            self.last_relation = None
 
         d_x = self.conv_d(x)
         d_x = d_x.view(N, self.num_subset, self.mid_out_channels, T, V)

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Launch all 16 ts_hgcn_v3.1 trainings.
+# Differences from v3:
+#   - StageDecomposerV3 has min_width=0.15 (segment floor, prevents collapse)
+#   - lambda_topo: 0.5 → 0.2 (relax topology anchor for bone stream)
+#   - ramp_start/end: 30/100 → 5/60 (aux losses kick in earlier)
+#
+# Usage:
+#   PARALLEL=2 nohup bash tools/launch_v3p1_all.sh \
+#       > work_dir/launch_v3p1_all.log 2>&1 &
+
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+DEVICE=${DEVICE:-0}
+PARALLEL=${PARALLEL:-2}
+
+JOBS=(
+  # NTU60-CSub  (4)
+  "config/ts_hgcn_v3p1/nturgbd-cross-subject/ts_hgcn_v3_joint.yaml         work_dir/ts_hgcn_v3p1/ntu60/xsub/joint"
+  "config/ts_hgcn_v3p1/nturgbd-cross-subject/ts_hgcn_v3_bone.yaml          work_dir/ts_hgcn_v3p1/ntu60/xsub/bone"
+  "config/ts_hgcn_v3p1/nturgbd-cross-subject/ts_hgcn_v3_joint_motion.yaml  work_dir/ts_hgcn_v3p1/ntu60/xsub/joint_motion"
+  "config/ts_hgcn_v3p1/nturgbd-cross-subject/ts_hgcn_v3_bone_motion.yaml   work_dir/ts_hgcn_v3p1/ntu60/xsub/bone_motion"
+  # NTU60-CV    (4)
+  "config/ts_hgcn_v3p1/nturgbd-cross-view/ts_hgcn_v3_joint.yaml         work_dir/ts_hgcn_v3p1/ntu60/xview/joint"
+  "config/ts_hgcn_v3p1/nturgbd-cross-view/ts_hgcn_v3_bone.yaml          work_dir/ts_hgcn_v3p1/ntu60/xview/bone"
+  "config/ts_hgcn_v3p1/nturgbd-cross-view/ts_hgcn_v3_joint_motion.yaml  work_dir/ts_hgcn_v3p1/ntu60/xview/joint_motion"
+  "config/ts_hgcn_v3p1/nturgbd-cross-view/ts_hgcn_v3_bone_motion.yaml   work_dir/ts_hgcn_v3p1/ntu60/xview/bone_motion"
+  # NTU120-CSub (4)
+  "config/ts_hgcn_v3p1/nturgbd120-cross-subject/ts_hgcn_v3_joint.yaml         work_dir/ts_hgcn_v3p1/ntu120/xsub/joint"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-subject/ts_hgcn_v3_bone.yaml          work_dir/ts_hgcn_v3p1/ntu120/xsub/bone"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-subject/ts_hgcn_v3_joint_motion.yaml  work_dir/ts_hgcn_v3p1/ntu120/xsub/joint_motion"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-subject/ts_hgcn_v3_bone_motion.yaml   work_dir/ts_hgcn_v3p1/ntu120/xsub/bone_motion"
+  # NTU120-CSet (4)
+  "config/ts_hgcn_v3p1/nturgbd120-cross-set/ts_hgcn_v3_joint.yaml         work_dir/ts_hgcn_v3p1/ntu120/xset/joint"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-set/ts_hgcn_v3_bone.yaml          work_dir/ts_hgcn_v3p1/ntu120/xset/bone"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-set/ts_hgcn_v3_joint_motion.yaml  work_dir/ts_hgcn_v3p1/ntu120/xset/joint_motion"
+  "config/ts_hgcn_v3p1/nturgbd120-cross-set/ts_hgcn_v3_bone_motion.yaml   work_dir/ts_hgcn_v3p1/ntu120/xset/bone_motion"
+)
+
+echo "[$(date)] launch_v3p1_all: ${#JOBS[@]} jobs, parallel=${PARALLEL}, device=${DEVICE}"
+
+queue=()
+skipped=0
+for entry in "${JOBS[@]}"; do
+  read -r cfg wd <<<"$entry"
+  if ls "$wd"/runs-140-*.pt >/dev/null 2>&1; then
+    echo "  SKIP $wd"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  queue+=("$entry")
+done
+echo "[$(date)] $((${#JOBS[@]} - skipped)) jobs to run, $skipped already done"
+
+run_one() {
+  local cfg=$1 wd=$2
+  mkdir -p "$wd"
+  rm -rf "$wd/runs"
+  local log="$wd/_v3p1.log"
+  echo "[$(date)] START $wd" | tee -a "$log"
+  printf 'y\n\n' | python -u main.py \
+      --config "$cfg" --work-dir "$wd" --device "$DEVICE" \
+      >> "$log" 2>&1
+  local rc=$?
+  if [ $rc -eq 0 ]; then
+    echo "[$(date)] OK    $wd" | tee -a "$log"
+  else
+    echo "[$(date)] FAIL($rc) $wd" | tee -a "$log"
+  fi
+}
+
+ok=0; fail=0
+running=()
+for entry in "${queue[@]}"; do
+  read -r cfg wd <<<"$entry"
+
+  while [ ${#running[@]} -ge $PARALLEL ]; do
+    new_running=()
+    for pid in "${running[@]}"; do
+      if kill -0 "$pid" 2>/dev/null; then
+        new_running+=("$pid")
+      else
+        wait "$pid"
+        if [ $? -eq 0 ]; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+      fi
+    done
+    running=("${new_running[@]}")
+    [ ${#running[@]} -ge $PARALLEL ] && sleep 30
+  done
+
+  run_one "$cfg" "$wd" &
+  pid=$!
+  running+=("$pid")
+  echo "[$(date)] launched PID=$pid for $wd  (running=${#running[@]}/$PARALLEL)"
+  sleep 5
+done
+
+echo "[$(date)] all queued, draining..."
+for pid in "${running[@]}"; do
+  wait "$pid"
+  if [ $? -eq 0 ]; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+done
+
+echo
+echo "==== launch_v3p1_all done ====  ok=$ok  fail=$fail  skipped=$skipped"

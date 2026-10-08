@@ -1,149 +1,106 @@
-# Hyper-GCN
-This repo is the official implementation for [Adaptive Hyper-Graph Convolution Network for Skeleton-based Human Action Recognition with Virtual Connections](https://arxiv.org/pdf/2411.14796). The paper is accepted to ICCV 2025.
+# TPFS-Net
 
-# Illustration
-<div align='center'>
-   <img src="./assets/illustration.png" width="500"/><br>
-</div>
-<!-- ![Illustration](./assets/illustration.png) -->
+Official code for **TPFS-Net: Topology-Preserving Feature Modeling and Stage Prototype Guidance for Skeleton-Based Action Recognition**.
 
-**Illustration of Hyper-GCN.** 
-In (a), dotted lines represent the virtualconnections. Each coloured part containing multiple joints represents a hyper-graph with hyper-edges. 
-(b) provides an intuitive comparison between normal graph convolution and hyper-graph convolution operations with the same connectivity degree.
+TPFS-Net extends a spatiotemporal Hyper-GCN backbone with two training modules:
 
-# Framework
-<div align='center'>
-   <img src="./assets/framework.png"/><br>
-</div>
+- **Topology-Preserving Feature Modeling (TPFM)** adds multi-scale heat-kernel structural-role encodings and regularizes learned joint relations with low-frequency subspace preservation and physical-skeleton anchoring.
+- **Stage Prototype Guidance (SPG)** pools features into ordered, soft temporal stages and learns class-conditional stage prototypes with a diversity objective.
 
-**The framework of Hyper-GCN.**
-Part (a) represents the Multi-head Hyper-graph Convolution (M-HGC) module.
-Part (b) represents the process of constructing an adaptive hyper-graph.
-Part (c) represents the architecture of Hyper-GCN.
+The auxiliary losses are used during training. At inference, the global classifier and prototype classifier probabilities are averaged.
 
-# Visualization
-| ![Drink water](./assets/A001P001.gif) | ![Stand up](./assets/A009P003.gif) | ![Clapping](./assets/A010P001.gif) | ![Jump up](./assets/A027P003.gif) |
-|:------------:|:------------:|:------------:|:------------:|
-|*Drink water*|*Stand up*|*Clapping*|*Jump up*|
-| ![Neck pain](./assets/A047P001.gif) | ![Wipe face](./assets/A037P003.gif) | ![Hopping](./assets/A026P001.gif) | ![Kicking something](./assets/A024P003.gif) |
-|*Neck pain*|*Wipe face*|*Hopping*|*Kicking something*|
+## Reported Results
 
-There are some selected actions for visualizing the hyper-graph constructed by Hyper-GCN.
+The paper reports the following five-run mean top-1 accuracies. Four-stream results fuse separately trained joint, bone, joint-motion, and bone-motion streams.
 
-# Prerequisites
-- Python == 3.9
-- PyTorch == 1.13.0
-- torchpack == 0.2.2
-- numpy == 1.26.4
-- PyYAML, tqdm, tensorboardX, matplotlib, sklearn, h5py
+| Protocol | Four-stream accuracy |
+| --- | ---: |
+| NTU RGB+D 60 X-Sub | 93.42 +/- 0.07% |
+| NTU RGB+D 60 X-View | 97.48 +/- 0.05% |
+| NTU RGB+D 120 X-Sub | 89.76 +/- 0.08% |
+| NTU RGB+D 120 X-Set | 91.18 +/- 0.08% |
+| Northwestern-UCLA | 97.31 +/- 0.09% |
 
-We provide the dependency file of our experimental environment, you can install all dependencies by creating a new anaconda virtual environment and running `pip install -r requirements.txt `
+The joint-stream model reports 92.22 +/- 0.09% on NTU60 X-Sub with 1.20 M parameters and 1.65 GFLOPs. These are paper-reported results, not a promise that a single run will reproduce the five-run mean. Dataset files and trained checkpoints are not included in this repository.
 
-# Data Preparation
+## Requirements
 
-### Download datasets.
+- Python 3.9
+- PyTorch 1.13.1 (use a build compatible with your CUDA installation for GPU training)
+- Dependencies listed in [`requirements.txt`](requirements.txt)
 
-#### There are 3 datasets to download:
+Install the Python dependencies in an environment with the appropriate PyTorch build:
 
-- NTU RGB+D 60 Skeleton
-- NTU RGB+D 120 Skeleton
-- NW-UCLA
-
-#### NTU RGB+D 60 and 120
-
-1. Request dataset here: https://rose1.ntu.edu.sg/dataset/actionRecognition
-2. Download the skeleton-only datasets:
-   1. `nturgbd_skeletons_s001_to_s017.zip` (NTU RGB+D 60)
-   2. `nturgbd_skeletons_s018_to_s032.zip` (NTU RGB+D 120)
-   3. Extract above files to `./data/nturgbd_raw`
-
-#### NW-UCLA
-
-1. Download dataset from [here](https://www.dropbox.com/s/10pcm4pksjy6mkq/all_sqe.zip?dl=0)
-2. Move `all_sqe` to `./data/NW-UCLA`
-
-### Data Processing
-
-#### Directory Structure
-
-Put downloaded data into the following directory structure:
-
-```
-- data/
-  - NW-UCLA/
-    - all_sqe
-      ... # raw data of NW-UCLA
-  - ntu/
-  - ntu120/
-  - nturgbd_raw/
-    - nturgb+d_skeletons/     # from `nturgbd_skeletons_s001_to_s017.zip`
-      ...
-    - nturgb+d_skeletons120/  # from `nturgbd_skeletons_s018_to_s032.zip`
-      ...
+```bash
+pip install -r requirements.txt
 ```
 
-#### Generating Data
+## Data Preparation
 
-- Generate NTU RGB+D 60 or NTU RGB+D 120 dataset:
+Download the skeleton datasets from their official sources and follow their terms of use:
 
-```
- cd ./data/ntu # or cd ./data/ntu120
- # Get skeleton of each performer
- python get_raw_skes_data.py
- # Remove the bad skeleton 
- python get_raw_denoised_data.py
- # Transform the skeleton to the center of the first frame
- python seq_transformation.py
-```
+- NTU RGB+D 60/120: [NTU RGB+D Action Recognition](https://rose1.ntu.edu.sg/dataset/actionRecognition)
+- Northwestern-UCLA: [Cross-View Action dataset](https://www.math.ucla.edu/~zjian/actionrec.html)
 
+Place the NTU skeleton archives under `data/nturgbd_raw/`, following the directory names expected by the preprocessing scripts. Then preprocess each split:
 
+```bash
+cd data/ntu
+python get_raw_skes_data.py
+python get_raw_denoised_data.py
+python seq_transformation.py
 
-# Training & Testing
-
-### Training
-
-- We provide the training configs for base and large version in 4 modalities (joint, bone, joint motion and bone motion) for each benchmark. 
-You can change the config file depending on what you want. As a example for base version on NTU120 X-Sub with device 0:
-
-```
-# train for modality joint
-python main.py --config config/base/nturgbd120-cross-subject/hyper_joint.yaml --work-dir <the save path of results> --device 0
-# train for modality bone
-python main.py --config config/base/nturgbd120-cross-subject/hyper_bone.yaml --work-dir <the save path of results> --device 0
-# train for modality joint motion
-python main.py --config config/base/nturgbd120-cross-subject/hyper_joint_motion.yaml --work-dir <the save path of results> --device 0
-# train for modality bone motion
-python main.py --config config/base/nturgbd120-cross-subject/hyper_bone_motion.yaml --work-dir <the save path of results> --device 0
+cd ../ntu120
+python get_raw_skes_data.py
+python get_raw_denoised_data.py
+python seq_transformation.py
 ```
 
-### Testing
+The generated arrays are intentionally ignored by Git. Set `data_path` in the selected YAML configuration to the resulting dataset file if your local layout differs.
 
-- You can test the trained models saved in `<the save path of results>` as the follow command:
+## Training
 
+Example: joint stream on NTU RGB+D 60 X-Sub using the TPFS-Net v3 configuration:
+
+```bash
+python main.py \
+  --config config/ts_hgcn_v3p1/nturgbd-cross-subject/ts_hgcn_v3_joint.yaml \
+  --work-dir work_dir/tpfs-net/ntu60/xsub/joint \
+  --device 0
 ```
-python main.py --config <the save path of results>/config.yaml --work-dir <the save path of results> --phase test --save-score True --weights <the save path of results>/xxx.pt --device 0
+
+The configuration files under `config/ts_hgcn_v3/` and `config/ts_hgcn_v3p1/` define the corresponding model variants and benchmark protocols. The `config/ablation/` directory contains joint-stream ablation and sensitivity configurations. Check each YAML file's dataset path, model arguments, and training settings before launching an experiment.
+
+## Evaluation
+
+Evaluate a trained checkpoint with its saved configuration:
+
+```bash
+python main.py \
+  --config work_dir/tpfs-net/ntu60/xsub/joint/config.yaml \
+  --work-dir work_dir/tpfs-net/ntu60/xsub/joint \
+  --phase test \
+  --save-score True \
+  --weights work_dir/tpfs-net/ntu60/xsub/joint/best.pt \
+  --device 0
 ```
 
-- If you want to ensemble the results of 4 modalities for the final result, run the following command (As a example for base version on NTU120 X-Sub): 
-```
-python ensemble.py --datasets ntu120/xsub --model base --joint-dir <the save path of result on joint> --bone-dir <the save path of result on bone> --joint-motion-dir <the save path of result on joint motion> --bone-motion-dir <the save path of result on bone motion>
-```
+Replace `best.pt` with the checkpoint filename produced by your run. For four-stream evaluation, train each modality separately and use `ensemble.py` with the corresponding experiment directories.
 
-# Pretrained Models
+## Repository Layout
 
-We provide the pretrained weights, configs and training logs. 
-You can download pretrained models for producing the final results on NTU 60 & 120 in [Google Drive](https://drive.google.com/drive/folders/1Zi6l8NL_mp7I7v8FjizlRNTk7wZlNfkQ?usp=sharing).
+- `model/`: Hyper-GCN backbone and TPFS-Net modules (TPFM and SPG)
+- `config/`: benchmark, model-size, and ablation configurations
+- `feeders/`, `graph/`, `data/`: input pipelines, skeleton graphs, and dataset preprocessing
+- `tools/`: experiment utilities, robustness evaluation, and paper-figure scripts
+- `tests/`: lightweight tests that do not require dataset files or checkpoints
+
+Dataset contents, checkpoints, generated figures, logs, manuscript drafts, and local IDE settings are excluded from version control.
 
 ## Acknowledgements
 
-- This repo is based on [CTR-GCN](https://github.com/Uason-Chen/CTR-GCN).
+The Hyper-GCN backbone builds on the work in [Adaptive Hyper-Graph Convolution Network for Skeleton-based Human Action Recognition with Virtual Connections](https://arxiv.org/abs/2411.14796). This repository also draws on publicly available skeleton-recognition implementations and preprocessing methods; please consult the relevant source papers and upstream repositories when using or adapting those components.
 
-- The data processing is borrowed from [SGN](https://github.com/microsoft/SGN) and [HCN](https://github.com/huguyuehuhu/HCN-pytorch).
+## Paper
 
-- The training strategy is referenced from [BlockGCN](https://github.com/ZhouYuxuanYX/BlockGCN), [SkateFormer](https://github.com/KAIST-VICLab/SkateFormer/tree/main) and [PYSKL](https://github.com/kennymckormick/pyskl)
-
-Thanks to the original authors for their work!
-
-
-# Contact
-For any questions, feel free to contact: `youwei_zhou@stu.jiangnan.edu.cn`
+Qi Bai, Mingjie Yu, Ruijing Xu, and Lin Xia, “TPFS-Net: Topology-Preserving Feature Modeling and Stage Prototype Guidance for Skeleton-Based Action Recognition.” Use the final publication metadata and DOI when citing the published version.

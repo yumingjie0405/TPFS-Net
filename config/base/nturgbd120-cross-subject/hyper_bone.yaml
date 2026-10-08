@@ -1,4 +1,4 @@
-work_dir: ./work_dir/ntu120/xsub/bone
+work_dir: ./work_dir/baseline/ntu120/xsub/bone
 
 # feeder
 feeder: feeders.feeder_ntu.Feeder

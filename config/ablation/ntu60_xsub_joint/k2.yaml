@@ -1,0 +1,62 @@
+work_dir: ./work_dir/ablation/ntu60_xsub_joint/k2
+feeder: feeders.feeder_ntu.Feeder
+train_feeder_args:
+  data_path: data/ntu/NTU60_CS.npz
+  split: train
+  debug: false
+  random_choose: false
+  random_shift: false
+  random_move: false
+  window_size: 64
+  random_rot: true
+  p_interval:
+  - 0.5
+  - 1
+  vel: false
+  bone: false
+test_feeder_args:
+  data_path: data/ntu/NTU60_CS.npz
+  split: test
+  window_size: 64
+  p_interval:
+  - 0.95
+  vel: false
+  bone: false
+  debug: false
+model: model.ts_hgcn_v3.Model
+model_args:
+  num_class: 60
+  num_point: 25
+  num_person: 2
+  hyper_joints: 3
+  graph: graph.ntu_rgb_d.Graph
+  graph_args:
+    labeling_mode: virtual_ensemble
+  num_stages: 2
+  proto_dim: 128
+  proto_temp: 0.1
+  lambda_topo: 0.2
+  lambda_proto: 0.5
+  lambda_ce_stage: 0.3
+  lambda_div: 0.1
+  stage_sharpness: 40.0
+  ramp_start: 5
+  ramp_end: 60
+  hk_taus:
+  - 0.2
+  - 1.0
+  - 5.0
+weight_decay: 0.0004
+base_lr: 0.05
+lr_decay_rate: 0.1
+step:
+- 110
+- 120
+warm_up_epoch: 5
+device:
+- 0
+batch_size: 64
+test_batch_size: 64
+num_epoch: 140
+save_epoch: 110
+nesterov: true
